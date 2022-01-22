@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xhprof Viewer</title>
+    <link href="https://s1.moodrain.cn/lib/element-ui/index.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        
+        html,
+        body,
+        #app {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <br />
+        <div style="text-align: center;">
+            <el-button @click="selectFile" :type="file ? 'success' : ''">{{ buttonText }}</el-button>
+            <input style="display: none;" ref="input" type="file" @change="getFile" />
+            <el-divider direction="vertical"></el-divider>
+            <el-button :type="show.main == 'table' ? 'primary' : ''" @click="toShow('table')">View Table</el-button>
+            <el-button :type="show.main == 'bar' ? 'primary' : ''" @click="toShow('bar')">View Chart</el-button>
+        </div>
+        <el-divider></el-divider>
+        <el-table :data="raw" :height="innerHeight" ref="table" v-show="show.main == 'table'">
+            <el-table-column prop="name" label="Call" width="1000" sortable></el-table-column>
+            <el-table-column prop="wt" label="Wall Time (ms)" sortable></el-table-column>
+            <el-table-column prop="cpu" label="CPU Time (ms)" sortable></el-table-column>
+            <el-table-column prop="mu" label="Mem Usage (kb)" sortable></el-table-column>
+            <el-table-column prop="pmu" label="Peak Mem (kb)" sortable></el-table-column>
+            <el-table-column prop="ct" label="Call Times" sortable></el-table-column>
+        </el-table>
+        <div v-show="show.main == 'bar'" style="text-align: center;">
+            <el-button :type="chartTarget == 'wt' ? 'primary' : ''" @click="toChartTarget('wt')">Wall Time</el-button>
+            <el-button :type="chartTarget == 'cpu' ? 'primary' : ''" @click="toChartTarget('cpu')">CPU Time</el-button>
+            <el-button :type="chartTarget == 'mu' ? 'primary' : ''" @click="toChartTarget('mu')">Mem Usage</el-button>
+            <el-button :type="chartTarget == 'pmu' ? 'primary' : ''" @click="toChartTarget('pmu')">Peak Mem</el-button>
+            <el-button :type="chartTarget == 'ct' ? 'primary' : ''" @click="toChartTarget('ct')">Call Times</el-button>
+        </div>
+    </div>
+
+    <div id="chart-bar" style="width: 100%; height: 100%;display: none;position: absolute;top: 150px;"></div>
+
+    <script src="https://s1.moodrain.cn/lib/vue/index.js"></script>
+    <script src="https://s1.moodrain.cn/lib/element-ui/index.js"></script>
+    <script src="https://s1.moodrain.cn/lib/echart/index.js"></script>
+    <script>
+        let chartBar
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    file: null,
+                    raw: [],
+                    chartTarget: 'wt',
+                    show: {
+                        main: 'table',
+                    },
+                    innerWidth: 800,
+                    innerHeight: 800,
+                }
+            },
+            methods: {
+                getFile() {
+                    let file = this.$refs.input.files[0]
+                    if (!file) {
+                        return
+                    }
+                    this.file = file
+                    let reader = new FileReader()
+                    reader.onload = () => {
+                        let data = JSON.parse(reader.result)
+                        if (!data) {
+                            this.$alert('Invalid JSON File')
+                            return
+                        }
+                        let format = []
+                        for (let key in data) {
+                            let val = data[key]
+                            format.push({
+                                name: key,
+                                cpu: Number.parseInt(val.cpu / 1000),
+                                ct: val.ct,
+                                mu: Number.parseInt(val.mu / 1000),
+                                pmu: Number.parseInt(val.pmu / 1000),
+                                wt: Number.parseInt(val.wt / 1000),
+                            })
+                        }
+                        this.raw = format
+                        this.$refs.table.sort('wt', 'descending')
+                        let option = {
+                            tooltip: {},
+                            yAxis: {
+                                type: 'category',
+                                data: this.charDataFilterName,
+                                axisLabel: {
+                                    fontSize: 8
+                                }
+                            },
+                            xAxis: {
+                                type: 'value'
+                            },
+                            series: [{
+                                data: this.chartDataFilterValue,
+                                type: 'bar',
+                                label: {
+                                    position: 'right',
+                                    show: true
+                                },
+                            }]
+                        };
+                        chartBar.setOption(option)
+                    }
+                    reader.readAsText(file)
+                },
+                selectFile() {
+                    this.$refs.input.click()
+                },
+                toChartTarget(target) {
+                    this.chartTarget = target
+                    let option = {
+                        tooltip: {},
+                        yAxis: {
+                            type: 'category',
+                            data: this.charDataFilterName,
+                            axisLabel: {
+                                fontSize: 8
+                            }
+                        },
+                        xAxis: {
+                            type: 'value'
+                        },
+                        series: [{
+                            data: this.chartDataFilterValue,
+                            type: 'bar',
+                            label: {
+                                position: 'right',
+                                show: true
+                            },
+                        }]
+                    };
+                    chartBar.setOption(option)
+                },
+                toShow(show) {
+                    this.show.main = show
+                    document.querySelector('#chart-bar').style.display = show == 'bar' ? 'block' : 'none'
+                }
+            },
+            computed: {
+                buttonText: {
+                    get() {
+                        if (this.file) {
+                            return 'Viewing ' + this.file.name
+                        }
+                        return 'Please Select JSON File'
+                    }
+                },
+                chartDataFilterValue: {
+                    get() {
+                        return this.raw.map(e => e[this.chartTarget]).sort((a, b) => b - a).slice(0, 50).reverse()
+                    }
+                },
+                charDataFilterName: {
+                    get() {
+                        return this.raw.sort((a, b) => {
+                            return b[this.chartTarget] - a[this.chartTarget]
+                        }).slice(0, 50).map(e => e.name).reverse()
+                    }
+                }
+            },
+            mounted() {
+                this.innerWidth = window.innerWidth
+                this.innerHeight = window.innerHeight
+                chartBar = echarts.init(document.querySelector('#chart-bar'), null, {
+                    width: this.innerWidth,
+                    height: this.innerHeight - 110,
+                })
+            }
+        })
+    </script>
+</body>
+
+</html>
